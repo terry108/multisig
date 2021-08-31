@@ -33,7 +33,8 @@ var (
 		"80bb7fbf5084610f4f9dabf5b3cfc27eee00e86424f20e65cdefb187a3225a58", //0x8d505f08E421d59794F462FF0Cc5b01787838CE0
 		"f61955911f7cb7304a182885c2b18d8fc433f23b80ad68a77b1a3d38f94b2c78", //0xCdD69c899028A0de95F5518bA5D2a8FfF7cd7799
 	}
-	contractAddressHex = "0x27888Fb851bb9c5B9E802Ca2e1f2d13fc2e55909"
+	// contractAddressHex = "0x27888Fb851bb9c5B9E802Ca2e1f2d13fc2e55909"
+	contractAddressHex = "0x2F1dC4AEb25d882e0823f9DCa31172A9f8Ee9411"
 	contractAddress    = common.HexToAddress(contractAddressHex)
 )
 
@@ -99,6 +100,7 @@ func TestDeploySimpleMultiSigContract(t *testing.T) {
 }
 
 func TestGetAllBalance(t *testing.T) {
+
 	client, err := ethclient.Dial(rpcHost)
 	tool.FailOnErr(t, err, "dial failed")
 	for _, v := range privkHexList {
@@ -107,6 +109,7 @@ func TestGetAllBalance(t *testing.T) {
 		tool.FailOnErr(t, err, "无法获取合约地址的余额")
 		fmt.Printf("%s, %v\n", addr.Address, bal)
 	}
+
 	bal, _ := client.BalanceAt(context.Background(), contractAddress, nil)
 	fmt.Println("合约地址当前余额", bal)
 }
