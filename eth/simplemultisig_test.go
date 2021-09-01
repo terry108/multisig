@@ -18,25 +18,7 @@ import (
 	"github.com/terry108/multisig/eth/tool"
 )
 
-var (
-	a0, a1, a2, a3 *tool.AddrInfo
-	addrs          []*tool.AddrInfo
-	rpcClient      *ethclient.Client
-	// erc20Contract        *contracts.FixedSupplyToken
-	erc20ContractAddress common.Address
-	expireTime           = big.NewInt(time.Now().Add(3 * 24 * time.Hour).Unix())
-
-	rpcHost      = "http://localhost:8545"
-	privkHexList = []string{
-		"b3cc8192cda1532fa013dea49974a6dd722cc1321bab11e0aa860f04b436387d", //0x7e9f34471c71858359E5574f0eDeb03dCa9F5f43
-		"0d507211e7dfbab3504134a8fc6e31b5fb44d420e302b936f798f52b15021d55", //0xDD9Cd206BC670d8d131E4b95a6Bd916Ad4338570
-		"80bb7fbf5084610f4f9dabf5b3cfc27eee00e86424f20e65cdefb187a3225a58", //0x8d505f08E421d59794F462FF0Cc5b01787838CE0
-		"f61955911f7cb7304a182885c2b18d8fc433f23b80ad68a77b1a3d38f94b2c78", //0xCdD69c899028A0de95F5518bA5D2a8FfF7cd7799
-	}
-	// contractAddressHex = "0x27888Fb851bb9c5B9E802Ca2e1f2d13fc2e55909"
-	contractAddressHex = "0x2F1dC4AEb25d882e0823f9DCa31172A9f8Ee9411"
-	contractAddress    = common.HexToAddress(contractAddressHex)
-)
+var expireTime = big.NewInt(time.Now().Add(3 * 24 * time.Hour).Unix())
 
 const (
 	bucketNum = 10

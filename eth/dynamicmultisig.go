@@ -22,11 +22,12 @@ import (
 // DeployDynamicMultiSigContract 创建部署一个多签合约，返回合约地址
 // address: 签名的参与者
 // return: address_hex,txid
-func DeployDynamicMultiSigContract(chainID *big.Int, backend bind.ContractBackend, privkHex string, hexAddress []string) (string, error) {
+func DeployDynamicMultiSigContract(chainID *big.Int, backend bind.ContractBackend, privkHex string, hexAddress []string) (common.Address, error) {
 	var (
-		err    error
-		privk  *ecdsa.PrivateKey
-		owners []common.Address
+		err          error
+		privk        *ecdsa.PrivateKey
+		owners       []common.Address
+		contractAddr common.Address
 	)
 
 	// 预处理: owners需要保持incr序，合约内的简单查重依赖于排序性
@@ -40,7 +41,7 @@ func DeployDynamicMultiSigContract(chainID *big.Int, backend bind.ContractBacken
 	// init vars
 	privk, err = crypto.HexToECDSA(privkHex)
 	if err != nil {
-		return "", fmt.Errorf("转换私钥时发生错误,%v", err)
+		return contractAddr, fmt.Errorf("转换私钥时发生错误,%v", err)
 	}
 	for _, ha := range hexAddress {
 		owners = append(owners, common.HexToAddress(ha))
@@ -49,15 +50,15 @@ func DeployDynamicMultiSigContract(chainID *big.Int, backend bind.ContractBacken
 	// 部署多签合约
 	auth, err := bind.NewKeyedTransactorWithChainID(privk, chainID)
 	if err != nil {
-		return "", fmt.Errorf("TransactOpts error,%v", err)
+		return contractAddr, fmt.Errorf("TransactOpts error,%v", err)
 	}
 	//TODO set gas,gasPrice
-	add, tx, _, err := contracts.DeployDynamicMultiSig(auth, backend, owners)
+	contractAddr, tx, _, err := contracts.DeployDynamicMultiSig(auth, backend, owners)
 	if err != nil {
-		return "", fmt.Errorf("_部署多签合约失败, %v", err)
+		return contractAddr, fmt.Errorf("_部署多签合约失败, %v", err)
 	}
 	_ = tx
-	return add.Hex(), nil
+	return contractAddr, nil
 }
 
 // DynamicMultiSigExecuteSign return sig byte
@@ -95,13 +96,11 @@ func DynamicMultiSigExecuteSign(txKey, signerPrivkHex string, erc20ContractAddr,
 	hashBytes := crypto.Keccak256(
 		bytes,
 	)
-	fmt.Println(hex.EncodeToString(hashBytes))
 
 	privk, err := crypto.HexToECDSA(signerPrivkHex)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("hash", hex.EncodeToString(hashBytes))
 	sig, err := crypto.Sign(hashBytes, privk)
 	if err != nil {
 		return nil, errors.Wrap(err, "crypto sign failed")
@@ -113,37 +112,27 @@ func DynamicMultiSigExecuteSign(txKey, signerPrivkHex string, erc20ContractAddr,
 type TxDynamicParams struct {
 	Backend                              bind.ContractBackend
 	TxKey                                string
-	ExpireTime                           *big.Int
-	Sig                                  []byte //签名
+	Signs                                []byte //签名
 	PrivkHex                             string
 	MultisigContractAddress, FromAddress string //多签合约地址，发起地址
+	ERC20ContractAddress                 string
 	Destination, Executor                string //toAddress
 	Value, GasLimit                      *big.Int
-	Data                                 []byte
 	ChainID                              *big.Int
 }
 
 // ExecuteTX .
 func ExecuteDynamicTX(txp *TxDynamicParams) (string, error) {
-	var (
-		err              error
-		privk            *ecdsa.PrivateKey
-		multisigContract *contracts.DynamicMultiSig
-	)
-
-	{ // init vars
-		privk, err = crypto.HexToECDSA(txp.PrivkHex)
-		if err != nil {
-			return "", err
-		}
-
-		multisigContract, err = contracts.NewDynamicMultiSig(common.HexToAddress(txp.MultisigContractAddress), txp.Backend)
-		if err != nil {
-			return "", fmt.Errorf("构建多签合约调用时异常,检查合约地址和rpc server,%v", err)
-		}
+	// init vars
+	privk, err := crypto.HexToECDSA(txp.PrivkHex)
+	if err != nil {
+		return "", err
+	}
+	multisigContract, err := contracts.NewDynamicMultiSig(common.HexToAddress(txp.MultisigContractAddress), txp.Backend)
+	if err != nil {
+		return "", fmt.Errorf("构建多签合约调用时异常,检查合约地址和rpc server,%v", err)
 	}
 
-	//TODO 参数校验
 	{ // 调用合约方法
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 		defer cancel()
@@ -151,12 +140,12 @@ func ExecuteDynamicTX(txp *TxDynamicParams) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("获取多签地址nonce时发生错误, %v", err)
 		}
-		dst := make([]byte, hex.EncodedLen(len(txp.Sig)))
-		hex.Encode(dst, txp.Sig)
+		dst := make([]byte, hex.EncodedLen(len(txp.Signs)))
+		hex.Encode(dst, txp.Signs)
 		signer := types.LatestSignerForChainID(txp.ChainID)
-		fmt.Printf("txp.TxKey: %s,txp.Destination: %s, txp.Value: %v, txp.MultisigContractAddress: %s\n",
-			txp.TxKey, txp.Destination, txp.Value, txp.MultisigContractAddress)
-		fmt.Printf("txp.Sig: %s\n", dst)
+		// fmt.Printf("txp.TxKey: %s,txp.Destination: %s, txp.Value: %v, txp.MultisigContractAddress: %s\n",
+		// 	txp.TxKey, txp.Destination, txp.Value, txp.MultisigContractAddress)
+		// fmt.Printf("txp.Sig: %s\n", dst)
 		tx, err := multisigContract.CreateOrSignWithdraw(&bind.TransactOpts{
 			From:     common.HexToAddress(txp.FromAddress),
 			Nonce:    big.NewInt(int64(nonce)),
@@ -174,8 +163,8 @@ func ExecuteDynamicTX(txp *TxDynamicParams) (string, error) {
 			common.HexToAddress(txp.Destination),
 			txp.Value,
 			false,
-			common.HexToAddress(txp.MultisigContractAddress),
-			txp.Sig)
+			common.HexToAddress(txp.ERC20ContractAddress),
+			txp.Signs)
 		if err != nil {
 			return "", fmt.Errorf("调用合约交易方法时发生错误, %v", err)
 		}
