@@ -16,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/pkg/errors"
-	"github.com/terry108/multisig/eth/contracts"
+	msg "github.com/terry108/multisig/eth/multisig_gen"
 )
 
 // DeployDynamicMultiSigContract 创建部署一个多签合约，返回合约地址
@@ -53,7 +53,7 @@ func DeployDynamicMultiSigContract(chainID *big.Int, backend bind.ContractBacken
 		return contractAddr, fmt.Errorf("TransactOpts error,%v", err)
 	}
 	//TODO set gas,gasPrice
-	contractAddr, tx, _, err := contracts.DeployDynamicMultiSig(auth, backend, owners)
+	contractAddr, tx, _, err := msg.DeployDynamicMultiSig(auth, backend, owners)
 	if err != nil {
 		return contractAddr, fmt.Errorf("_部署多签合约失败, %v", err)
 	}
@@ -62,7 +62,7 @@ func DeployDynamicMultiSigContract(chainID *big.Int, backend bind.ContractBacken
 }
 
 // DynamicMultiSigExecuteSign return sig byte
-func DynamicMultiSigExecuteSign(txKey, signerPrivkHex string, erc20ContractAddr, destinationAddr string, value *big.Int) ([]byte, error) {
+func DynamicMultiSigExecuteSign(txKey, signerPrivkHex string, isERC20 bool, erc20ContractAddr, destinationAddr common.Address, value *big.Int) ([]byte, error) {
 	addressTy, _ := abi.NewType("address", "", nil)
 	stringTy, _ := abi.NewType("string", "", nil)
 	uintTy, _ := abi.NewType("uint256", "", nil)
@@ -84,10 +84,10 @@ func DynamicMultiSigExecuteSign(txKey, signerPrivkHex string, erc20ContractAddr,
 	}
 	bytes, err := arguments.Pack(
 		txKey,
-		common.HexToAddress(destinationAddr),
+		destinationAddr,
 		value,
-		false,
-		common.HexToAddress(erc20ContractAddr),
+		isERC20,
+		erc20ContractAddr,
 		big.NewInt(2),
 	)
 	if err != nil {
@@ -114,9 +114,10 @@ type TxDynamicParams struct {
 	TxKey                                string
 	Signs                                []byte //签名
 	PrivkHex                             string
-	MultisigContractAddress, FromAddress string //多签合约地址，发起地址
-	ERC20ContractAddress                 string
-	Destination, Executor                string //toAddress
+	MultisigContractAddress, FromAddress common.Address //多签合约地址，发起地址
+	IsERC20                              bool
+	ERC20ContractAddress                 common.Address
+	Destination                          common.Address //toAddress
 	Value, GasLimit                      *big.Int
 	ChainID                              *big.Int
 }
@@ -128,7 +129,7 @@ func ExecuteDynamicTX(txp *TxDynamicParams) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	multisigContract, err := contracts.NewDynamicMultiSig(common.HexToAddress(txp.MultisigContractAddress), txp.Backend)
+	multisigContract, err := msg.NewDynamicMultiSig(txp.MultisigContractAddress, txp.Backend)
 	if err != nil {
 		return "", fmt.Errorf("构建多签合约调用时异常,检查合约地址和rpc server,%v", err)
 	}
@@ -136,7 +137,7 @@ func ExecuteDynamicTX(txp *TxDynamicParams) (string, error) {
 	{ // 调用合约方法
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 		defer cancel()
-		nonce, err := txp.Backend.PendingNonceAt(ctx, common.HexToAddress(txp.FromAddress))
+		nonce, err := txp.Backend.PendingNonceAt(ctx, txp.FromAddress)
 		if err != nil {
 			return "", fmt.Errorf("获取多签地址nonce时发生错误, %v", err)
 		}
@@ -147,7 +148,7 @@ func ExecuteDynamicTX(txp *TxDynamicParams) (string, error) {
 		// 	txp.TxKey, txp.Destination, txp.Value, txp.MultisigContractAddress)
 		// fmt.Printf("txp.Sig: %s\n", dst)
 		tx, err := multisigContract.CreateOrSignWithdraw(&bind.TransactOpts{
-			From:     common.HexToAddress(txp.FromAddress),
+			From:     txp.FromAddress,
 			Nonce:    big.NewInt(int64(nonce)),
 			GasLimit: uint64(txp.GasLimit.Int64()),
 			Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
@@ -160,10 +161,10 @@ func ExecuteDynamicTX(txp *TxDynamicParams) (string, error) {
 			Context: context.Background(),
 		}, //txKey string, to common.Address, amount *big.Int, isERC20 bool, ERC20 common.Address, signatures []byte)
 			txp.TxKey,
-			common.HexToAddress(txp.Destination),
+			txp.Destination,
 			txp.Value,
-			false,
-			common.HexToAddress(txp.ERC20ContractAddress),
+			txp.IsERC20,
+			txp.ERC20ContractAddress,
 			txp.Signs)
 		if err != nil {
 			return "", fmt.Errorf("调用合约交易方法时发生错误, %v", err)

@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/terry108/multisig/eth/contracts"
+	msg "github.com/terry108/multisig/eth/multisig_gen"
 	"github.com/terry108/multisig/eth/tool"
 )
 
@@ -153,7 +153,7 @@ func TestMutisigWithdraw(t *testing.T) {
 	outAddr := a3.Address
 	transferValue := big.NewInt(tool.E18)
 	{ // 交易测试
-		multisigContract, err := contracts.NewSimpleMultiSig(contractAddress, client)
+		multisigContract, err := msg.NewSimpleMultiSig(contractAddress, client)
 		tool.FailOnErr(t, err, "构建多签合约调用时异常,检查合约地址和rpc server")
 
 		nonce, err := multisigContract.NonceBucket(&bind.CallOpts{Pending: true}, big.NewInt(bucketIdx))
@@ -170,7 +170,7 @@ func TestMutisigWithdraw(t *testing.T) {
 		)
 		// 012由0发起，0和2签名, 把钱赚到3的地址上，executor 为0
 		privkHex = a0.PrivkHex
-		multisigContractAddress = contractAddressHex
+		multisigContractAddress = contractAddress.Hex()
 		fromAddress = a0.Address
 		executor = a0.Address
 		destination = outAddr

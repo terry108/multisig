@@ -17,7 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/pkg/errors"
-	"github.com/terry108/multisig/eth/contracts"
+	msg "github.com/terry108/multisig/eth/multisig_gen"
 )
 
 // DeploySimpleMultiSigContract 创建部署一个多签合约，返回合约地址
@@ -54,7 +54,7 @@ func DeploySimpleMultiSigContract(nonceBucketNum uint16, chainID *big.Int, backe
 		return "", fmt.Errorf("TransactOpts error,%v", err)
 	}
 	//TODO set gas,gasPrice
-	add, tx, _, err := contracts.DeploySimpleMultiSig(auth, backend, nonceBucketNum, big.NewInt(int64(mRequired)), owners, chainID)
+	add, tx, _, err := msg.DeploySimpleMultiSig(auth, backend, nonceBucketNum, big.NewInt(int64(mRequired)), owners, chainID)
 	if err != nil {
 		return "", fmt.Errorf("_部署多签合约失败, %v", err)
 	}
@@ -73,10 +73,10 @@ func DeploySimpleMultiSigContract(nonceBucketNum uint16, chainID *big.Int, backe
 
 // GetContractInfo 获取多签合约地址内的地址和签名人数
 func GetContractInfo(caller bind.ContractCaller, contractAddress string) (addrs []string, mRequired int64, err error) {
-	var multisigContract *contracts.SimpleMultiSigCaller
+	var multisigContract *msg.SimpleMultiSigCaller
 
 	{ // init vars
-		multisigContract, err = contracts.NewSimpleMultiSigCaller(common.HexToAddress(contractAddress), caller)
+		multisigContract, err = msg.NewSimpleMultiSigCaller(common.HexToAddress(contractAddress), caller)
 		if err != nil {
 			return nil, 0, fmt.Errorf("构建多签合约调用时异常,检查合约地址和rpc server,%v", err)
 		}
@@ -126,7 +126,7 @@ func ExecuteTX(txp *TxParams) (string, error) {
 	var (
 		err              error
 		privk            *ecdsa.PrivateKey
-		multisigContract *contracts.SimpleMultiSig
+		multisigContract *msg.SimpleMultiSig
 	)
 
 	{ // init vars
@@ -135,7 +135,7 @@ func ExecuteTX(txp *TxParams) (string, error) {
 			return "", err
 		}
 
-		multisigContract, err = contracts.NewSimpleMultiSig(common.HexToAddress(txp.MultisigContractAddress), txp.Backend)
+		multisigContract, err = msg.NewSimpleMultiSig(common.HexToAddress(txp.MultisigContractAddress), txp.Backend)
 		if err != nil {
 			return "", fmt.Errorf("构建多签合约调用时异常,检查合约地址和rpc server,%v", err)
 		}
