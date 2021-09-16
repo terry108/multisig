@@ -28,7 +28,7 @@ contract ERC721Minter is Context, ERC721URIStorage {
         current_minter = minter;
     }
 
-    function mint(address player, string memory tokenURI)
+    function mint(address player, string calldata tokenURI)
         external
         onlyMinter
         returns (uint256)

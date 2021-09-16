@@ -19,28 +19,6 @@ import (
 	"github.com/terry108/multisig/go_helper/tool"
 )
 
-var (
-	a0           *tool.AddrInfo // 部署合约
-	a1, a2, a3   *tool.AddrInfo
-	addrs        []*tool.AddrInfo
-	rpcHost      = "http://localhost:8545"
-	privkHexList = []string{
-		"b3cc8192cda1532fa013dea49974a6dd722cc1321bab11e0aa860f04b436387d", //0x7e9f34471c71858359E5574f0eDeb03dCa9F5f43
-		"0d507211e7dfbab3504134a8fc6e31b5fb44d420e302b936f798f52b15021d55", //0xDD9Cd206BC670d8d131E4b95a6Bd916Ad4338570
-		"80bb7fbf5084610f4f9dabf5b3cfc27eee00e86424f20e65cdefb187a3225a58", //0x8d505f08E421d59794F462FF0Cc5b01787838CE0
-		"f61955911f7cb7304a182885c2b18d8fc433f23b80ad68a77b1a3d38f94b2c78", //0xCdD69c899028A0de95F5518bA5D2a8FfF7cd7799
-	}
-
-	contractAddress = common.HexToAddress("0x5F27F120a70eF82E0c07f5Eb3a3dF5E52352D13e")
-	isERC20         = true
-	ERC20Address    = common.HexToAddress("0x89b7be2fa81101201ad09ef4be44C0C2cC33a61a")
-	// rpcClient          *ethclient.Client
-	// contractAddressHex = "0x2F1dC4AEb25d882e0823f9DCa31172A9f8Ee9411"
-
-	// erc20Contract        *contracts.FixedSupplyToken
-	// erc20ContractAddress common.Address
-)
-
 func TestDelpoyMultiSigContract(t *testing.T) {
 	// 初始化准备
 	rpcClient, err := ethclient.Dial(rpcHost)
@@ -112,9 +90,9 @@ func TestDynamicMultisig(t *testing.T) {
 
 	// 初始化准备
 	var (
-		signs           []byte //签名
-		privkHex        string
-		value, gasLimit *big.Int
+		signs    []byte //签名
+		privkHex string
+		value    *big.Int
 	)
 	for _, v := range privkHexList {
 		addr := tool.GenAddr(v)
@@ -139,14 +117,13 @@ func TestDynamicMultisig(t *testing.T) {
 	fromAddress := a2.ToAddress()
 	destination := a3.ToAddress()
 	value = big.NewInt(1).Mul(big.NewInt(tool.E18), big.NewInt(1))
-	gasLimit = big.NewInt(8239963)
 	randomTx := types.NewTx(&types.AccessListTx{Nonce: uint64(time.Now().Unix())})
 	randomTxKey := randomTx.Hash().Hex()
 
 	// 多签
 	chainID, _ := rpcClient.ChainID(context.Background())
 	for _, add := range []*tool.AddrInfo{a1, a3} {
-		s, err := DynamicMultiSigExecuteSign(randomTxKey[2:], add.PrivkHex, isERC20, ERC20Address, destination, value)
+		s, err := DynamicMultiSignTx(randomTxKey[2:], add.PrivkHex, isERC20, ERC20Address, destination, value)
 		tool.FailOnErr(t, err, "create sig failed")
 		signs = append(signs, s...)
 	}
@@ -157,17 +134,16 @@ func TestDynamicMultisig(t *testing.T) {
 		PrivkHex:                privkHex,
 		MultisigContractAddress: contractAddress,
 		IsERC20:                 isERC20,
-		ERC20ContractAddress:    ERC20Address,
+		ERC20Addr:               ERC20Address,
 		FromAddress:             fromAddress,
 		Destination:             destination,
 		Value:                   value,
-		GasLimit:                gasLimit,
 		ChainID:                 chainID,
 	}
 	// fmt.Println("TxKey: ", params.TxKey)
 	// fmt.Println("Destination: ", params.Destination)
 	// fmt.Println("IsERC20: ", params.IsERC20)
-	// fmt.Println("ERC20ContractAddress: ", params.ERC20ContractAddress)
+	// fmt.Println("ERC20Addr: ", params.ERC20Addr)
 	// fmt.Println("Value: ", params.Value)
 	// fmt.Println("Signs: ", hex.EncodeToString(params.Signs))
 	// return
@@ -353,4 +329,54 @@ func TestCrossOutERC20(t *testing.T) {
 	bal, err := erc20Minter.BalanceOf(copts, a3.ToAddress())
 	tool.FailOnErr(t, err, "get erc20 balance failed")
 	fmt.Println("erc20 balance: ", bal)
+}
+
+func TestAddress(t *testing.T) {
+	// 初始化准备
+	ctx := context.Background()
+	rpcClient, err := ethclient.Dial(rpcHost)
+	tool.FailOnErr(t, err, "dial failed")
+	tool.WaitSomething(t, time.Minute, func() error { _, e := rpcClient.NetworkID(context.Background()); return e })
+	// 地址分配，a0用来部署合约
+	for _, v := range privkHexList {
+		addr := tool.GenAddr(v)
+		addrs = append(addrs, addr)
+	}
+	a0, a1, a2, a3 = addrs[0], addrs[1], addrs[2], addrs[3]
+	tool.PrepareFunds4address(t, rpcHost, a0.Address, 1)
+	bal, err := rpcClient.BalanceAt(ctx, a0.ToAddress(), nil)
+	tool.FailOnErr(t, err, "get balance failed")
+	fmt.Println(bal.String())
+}
+
+func TestCrossOutERC721(t *testing.T) {
+	// // 2. deploy ERC721 contract
+	// fmt.Println("2.Deploy ERC721 contract")
+	// auth, err := bind.NewKeyedTransactorWithChainID(a0.ToECDSAKey(), chainID)
+	// tool.FailOnErr(t, err, "NewKeyedTransactorWithChainID failed")
+	// ERC721Address, _, _, err := erc721.DeployERC721Minter(auth, rpcClient, "MyNFT", "MN", contractAddress)
+	// tool.FailOnErr(t, err, "deploy erc721 failed")
+	// fmt.Println("DeployERC721Minter address:", ERC721Address.Hex())
+
+	// // 3. mint NFT
+	// fmt.Println("2.Mint ERC721")
+	// nft, err := erc721.NewERC721Minter(ERC721Address, rpcClient)
+	// tool.FailOnErr(t, err, "NewERC721Minter failed")
+	// nonce, err := rpcClient.NonceAt(ctx, a0.ToAddress(), nil)
+	// tool.FailOnErr(t, err, "Failed to get nonce")
+	// signer := types.LatestSignerForChainID(chainID)
+	// opts := &bind.TransactOpts{
+	// 	From:  a0.ToAddress(),
+	// 	Nonce: big.NewInt(int64(nonce)),
+	// 	Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
+	// 		signature, err := crypto.Sign(signer.Hash(tx).Bytes(), a0.ToECDSAKey())
+	// 		if err != nil {
+	// 			return nil, err
+	// 		}
+	// 		return tx.WithSignature(signer, signature)
+	// 	},
+	// }
+	// tx, err := nft.Mint(opts, a0.ToAddress(), "test nft")
+	// tool.FailOnErr(t, err, "mint ERC721 failed")
+	// fmt.Println("mint ERC721 success: ", tx.Hash().Hex())
 }

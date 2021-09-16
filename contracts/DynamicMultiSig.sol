@@ -5,6 +5,7 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "solidity-bytes-utils/contracts/BytesLib.sol";
@@ -18,14 +19,14 @@ interface IERC20Minter {
 }
 
 interface IERC721Minter {
-    function mint(address player, string memory tokenURI) external;
+    function mint(address to, string memory tokenURI) external;
 
     function burn(uint256 tokenId) external;
 
     function replaceMinter(address newMinter) external;
 }
 
-contract DynamicMultiSig {
+contract DynamicMultiSig is IERC721Receiver {
     using Address for address;
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
@@ -95,6 +96,20 @@ contract DynamicMultiSig {
         emit DepositFunds(msg.sender, msg.value);
     }
 
+    /**
+     * @dev See {IERC721Receiver-onERC721Received}.
+     *
+     * Always returns `IERC721Receiver.onERC721Received.selector`.
+     */
+    function onERC721Received(
+        address,
+        address,
+        uint256,
+        bytes memory
+    ) public virtual override returns (bytes4) {
+        return this.onERC721Received.selector;
+    }
+
     function createOrSignWithdraw(
         string memory txKey,
         address payable to,
@@ -136,6 +151,34 @@ contract DynamicMultiSig {
             to.transfer(amount);
             emit TransferFunds(to, amount);
         }
+        // 保存交易数据
+        completeTx(txKey, vHash, 1);
+        emit TxWithdrawCompleted(txKey);
+    }
+
+    function createOrSignWithdrawNFT(
+        string memory txKey,
+        address ERC721,
+        address to,
+        uint256 tokenId,
+        string calldata tokenURI,
+        bytes memory signatures
+    ) public isManager {
+        require(bytes(txKey).length == 64, "Fixed length of txKey: 64");
+        require(to != address(0), "Withdraw: transfer to the zero address");
+        // 校验已经完成的交易
+        require(completedTxs[txKey] == 0, "Transaction has been completed");
+        // 校验提现金额
+        validateTransferERC721(ERC721, to, tokenId);
+        bytes32 vHash = keccak256(
+            abi.encode(txKey, ERC721, to, tokenId, tokenURI, VERSION)
+        );
+        // 校验请求重复性
+        require(completedKeccak256s[vHash] == 0, "Invalid signatures");
+        // 校验签名
+        require(validSignature(vHash, signatures), "Valid signatures fail");
+        // 执行转账
+        transferERC721(ERC721, to, tokenId, tokenURI);
         // 保存交易数据
         completeTx(txKey, vHash, 1);
         emit TxWithdrawCompleted(txKey);
@@ -449,19 +492,36 @@ contract DynamicMultiSig {
         token.safeTransfer(to, amount);
     }
 
+    function validateTransferERC721(
+        address ERC721,
+        address to,
+        uint256 tokenId
+    ) internal view {
+        require(to != address(0), "ERC20: transfer to the zero address");
+        require(address(this) != ERC721, "Do nothing by yourself");
+        require(ERC721.isContract(), "The address is not a contract address");
+        if (isMinterERC721(ERC721)) {
+            // 定制ERC20验证结束
+            return;
+        }
+        IERC721 token = IERC721(ERC721);
+        address tokenOwner = token.ownerOf(tokenId);
+        require(tokenOwner == address(this), "Not owner of token");
+    }
+
     function transferERC721(
         address ERC721,
         address to,
         uint256 tokenId,
         string memory tokenURI
     ) internal {
-        if (isMinterERC20(ERC721)) {
-            // 定制的ERC20，跨链转入以太坊网络即增发
+        if (isMinterERC721(ERC721)) {
+            // 定制的ERC721，跨链转入以太坊网络即增发
             IERC721Minter minterToken = IERC721Minter(ERC721);
             minterToken.mint(to, tokenURI);
             return;
         }
-        address from = msg.sender;
+        address from = address(this);
         IERC721 token = IERC721(ERC721);
         token.safeTransferFrom(from, to, tokenId);
     }
@@ -592,7 +652,7 @@ contract DynamicMultiSig {
             IERC721Minter minterToken = IERC721Minter(ERC721);
             minterToken.burn(tokenId);
         }
-        emit CrossOutFunds(from, to, tokenId, ERC721);
+        emit CrossOutNFT(from, to, tokenId, ERC721);
         return true;
     }
 
@@ -610,6 +670,7 @@ contract DynamicMultiSig {
 
     event DepositFunds(address from, uint256 amount);
     event CrossOutFunds(address from, string to, uint256 amount, address ERC20);
+    event CrossOutNFT(address from, string to, uint256 tokenId, address ERC721);
     event TransferFunds(address to, uint256 amount);
     event TxWithdrawCompleted(string txKey);
     event TxManagerChangeCompleted(string txKey);
