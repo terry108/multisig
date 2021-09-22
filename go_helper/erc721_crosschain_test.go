@@ -82,7 +82,7 @@ func TestERC721DepositAndWithdraw(t *testing.T) {
 	// cross out
 	nonce, _ = rpcClient.NonceAt(ctx, a0.ToAddress(), nil)
 	opts.Nonce = big.NewInt(int64(nonce))
-	tx, err = multisigContract.CrossOutNFT(opts, "cross_chain_to", game721Address, tokenId)
+	tx, err = multisigContract.CrossOutERC721(opts, "cross_chain_to", game721Address, tokenId)
 	tool.FailOnErr(t, err, "CrossOutNFT game721 failed")
 	fmt.Println("CrossOutNFT game721 success: ", tx.Hash().Hex())
 	owner, err = game721Contract.OwnerOf(copts, tokenId)
@@ -236,7 +236,7 @@ func TestMinerBurnERC721(t *testing.T) {
 	tool.FailOnErr(t, err, "approve failed")
 	fmt.Println("approve tx: ", tx.Hash())
 	opts.Nonce = big.NewInt(int64(nonce + 1))
-	tx, err = multisigContract.CrossOutNFT(opts, "test_address", ERC721Address, tokenId)
+	tx, err = multisigContract.CrossOutERC721(opts, "test_address", ERC721Address, tokenId)
 	tool.FailOnErr(t, err, "CrossOut NFT failed")
 	fmt.Println("CrossOut NFT tx: ", tx.Hash().Hex())
 	a1Bal, err := ERC721Contract.BalanceOf(copts, a1.ToAddress())

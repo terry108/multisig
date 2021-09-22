@@ -241,7 +241,7 @@ func ExecuteDynamicNFT(txp *TxDynamicParams) (string, error) {
 		dst := make([]byte, hex.EncodedLen(len(txp.Signs)))
 		hex.Encode(dst, txp.Signs)
 		signer := types.LatestSignerForChainID(txp.ChainID)
-		tx, err := multisigContract.CreateOrSignWithdrawNFT(&bind.TransactOpts{
+		tx, err := multisigContract.CreateOrSignWithdrawERC721(&bind.TransactOpts{
 			From:  txp.FromAddress,
 			Nonce: big.NewInt(int64(nonce)),
 			Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {

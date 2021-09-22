@@ -5,7 +5,9 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
+import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
+import "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "solidity-bytes-utils/contracts/BytesLib.sol";
@@ -26,7 +28,24 @@ interface IERC721Minter {
     function replaceMinter(address newMinter) external;
 }
 
-contract DynamicMultiSig is IERC721Receiver {
+interface IERC1155Minter {
+    function mintBatch(
+        address to,
+        uint256[] memory ids,
+        uint256[] memory amounts,
+        bytes memory data
+    ) external;
+
+    function burnBatch(
+        address account,
+        uint256[] memory ids,
+        uint256[] memory values
+    ) external;
+
+    function replaceMinter(address newMinter) external;
+}
+
+contract DynamicMultiSig is ERC721Holder, ERC1155Holder {
     using Address for address;
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
@@ -65,6 +84,7 @@ contract DynamicMultiSig is IERC721Receiver {
     mapping(string => uint8) private completedTxs;
     mapping(address => uint8) private minterERC20s;
     mapping(address => uint8) private minterERC721s;
+    mapping(address => uint8) private minterERC1155s;
 
     constructor(address[] memory _managers) {
         require(
@@ -94,20 +114,6 @@ contract DynamicMultiSig is IERC721Receiver {
 
     receive() external payable {
         emit DepositFunds(msg.sender, msg.value);
-    }
-
-    /**
-     * @dev See {IERC721Receiver-onERC721Received}.
-     *
-     * Always returns `IERC721Receiver.onERC721Received.selector`.
-     */
-    function onERC721Received(
-        address,
-        address,
-        uint256,
-        bytes memory
-    ) public virtual override returns (bytes4) {
-        return this.onERC721Received.selector;
     }
 
     function createOrSignWithdraw(
@@ -156,7 +162,7 @@ contract DynamicMultiSig is IERC721Receiver {
         emit TxWithdrawCompleted(txKey);
     }
 
-    function createOrSignWithdrawNFT(
+    function createOrSignWithdrawERC721(
         string memory txKey,
         address ERC721,
         address to,
@@ -605,6 +611,28 @@ contract DynamicMultiSig is IERC721Receiver {
         delete minterERC721s[ERC721];
     }
 
+    // 是否定制的ERC1155
+    function isMinterERC1155(address ERC1155) public view returns (bool) {
+        return minterERC1155s[ERC1155] > 0;
+    }
+
+    // 登记定制的ERC1155
+    function registerMinterERC1155(address ERC1155) public isOwner {
+        require(address(this) != ERC1155, "Do nothing by yourself");
+        require(ERC1155.isContract(), "The address is not a contract address");
+        require(
+            !isMinterERC1155(ERC1155),
+            "This address has already been registered"
+        );
+        minterERC1155s[ERC1155] = 1;
+    }
+
+    // 取消登记定制的ERC1155
+    function unregisterMinterERC1155(address ERC1155) public isOwner {
+        require(isMinterERC721(ERC1155), "This address is not registered");
+        delete minterERC1155s[ERC1155];
+    }
+
     // 从eth网络跨链转出资产(ETH or ERC20)
     function crossOut(
         string memory to, // chainID(int) + address
@@ -637,7 +665,7 @@ contract DynamicMultiSig is IERC721Receiver {
         return true;
     }
 
-    function crossOutNFT(
+    function crossOutERC721(
         string memory to,
         address ERC721,
         uint256 tokenId
@@ -652,7 +680,31 @@ contract DynamicMultiSig is IERC721Receiver {
             IERC721Minter minterToken = IERC721Minter(ERC721);
             minterToken.burn(tokenId);
         }
-        emit CrossOutNFT(from, to, tokenId, ERC721);
+        emit CrossOutERC721(from, to, tokenId, ERC721);
+        return true;
+    }
+
+    function crossOutERC1155(
+        string memory to,
+        address ERC1155,
+        uint256[] memory ids,
+        uint256[] memory amounts,
+        bytes memory data
+    ) public returns (bool) {
+        address from = msg.sender;
+        require(ERC1155.isContract(), "The address is not a contract address");
+        require(
+            ids.length == amounts.length,
+            "ERC1155: ids and amounts length mismatch"
+        );
+        IERC1155 token = IERC1155(ERC1155);
+        token.safeBatchTransferFrom(from, address(this), ids, amounts, data);
+        if (isMinterERC1155(ERC1155)) {
+            // 定制的ERC1155，从以太坊网络跨链转出token即销毁
+            IERC1155Minter minterToken = IERC1155Minter(ERC1155);
+            minterToken.burnBatch(address(this), ids, amounts);
+        }
+        emit CrossOutERC1155(from, to, ids, amounts, data, ERC1155);
         return true;
     }
 
@@ -670,7 +722,20 @@ contract DynamicMultiSig is IERC721Receiver {
 
     event DepositFunds(address from, uint256 amount);
     event CrossOutFunds(address from, string to, uint256 amount, address ERC20);
-    event CrossOutNFT(address from, string to, uint256 tokenId, address ERC721);
+    event CrossOutERC721(
+        address from,
+        string to,
+        uint256 tokenId,
+        address ERC721
+    );
+    event CrossOutERC1155(
+        address from,
+        string to,
+        uint256[] ids,
+        uint256[] amounts,
+        bytes data,
+        address ERC1155
+    );
     event TransferFunds(address to, uint256 amount);
     event TxWithdrawCompleted(string txKey);
     event TxManagerChangeCompleted(string txKey);
